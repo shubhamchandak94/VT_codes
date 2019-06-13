@@ -1,7 +1,7 @@
 import numpy as np
 
 class VTCode:
-    def __init__(self, n: int, q: int, a = 0: int, b = 0: int,
+    def __init__(self, n: int, q: int, a = 0, b = 0,
                 correct_substitutions = False):
         '''
         Here n is the codeword length and q is the alphabet size.
@@ -50,7 +50,7 @@ class VTCode:
                 y = _correct_binary_indel(self.n, self.m, self.a, y)
             else:
                 if self.correct_substitutions and not self._is_codeword(y):
-                    y = _correct_binary_substitution(n, m, a, y)
+                    y = _correct_binary_substitution(self.n, self.m, self.a, y)
         else:
             if n_y != self.n:
                 y = _correct_q_ary_indel(self.n, self.m, self.a, self.b, self.q, y)
@@ -68,28 +68,28 @@ class VTCode:
             print("Value in x out of range {0, 1}")
             raise RuntimeError
         if self.q == 2:
-            return _encode_binary(self,x)
+            return self._encode_binary(x)
         else:
-            return _encode_q_ary(self,x)
+            return self._encode_q_ary(x)
 
 
     def _decode_codeword(self, y):
         '''
         decode a codeword (if not a codeword, returns None)
         '''
-        if not _is_codeword(y):
+        if not self._is_codeword(y):
             return None
         if self.q == 2:
-            return _decode_codeword_binary(self,y)
+            return self._decode_codeword_binary(y)
         else:
-            return _decode_codeword_q_ary(self,y)
+            return self._decode_codeword_q_ary(y)
 
     def _decode_codeword_binary(self, y):
         '''
         decoding helper for binary case (assume it's a valid codeword)
         '''
         # just return values at the systematic positions
-        return y[self.systematic_positions]
+        return y[self.systematic_positions-1]
 
     def _decode_codeword_q_ary(self, y):
         '''
@@ -126,7 +126,7 @@ class VTCode:
         '''
         return True if y is a codeword
         '''
-        if y == None or y.size != self.n:
+        if y is None or y.size != self.n:
             return False
         if self.q == 2:
             return (_compute_syndrome_binary(self.n, self.m, self.a, y) == 0)
@@ -139,7 +139,7 @@ class VTCode:
         # put powers of two in the parity positions
         self.parity_positions = np.zeros(self.n-self.k, dtype=np.uint32)
         for i in range(t):
-            self.parity_positions[i] = np.pow(2,i)
+            self.parity_positions[i] = np.power(2,i)
         if self.correct_substitutions:
             assert self.parity_positions.size == t + 1
             # one extra parity bit in this case
@@ -169,7 +169,7 @@ def find_smallest_n(k: int, q : int, correct_substitutions = False):
         print("correct_substitutions can be True only for q = 2")
         raise RuntimeError
     # set the starting n and then increase till you get the minimum
-    if q == 2
+    if q == 2:
         if not correct_substitutions:
             n = k + np.ceil(np.log(k+1)/np.log(2)).astype(np.uint32)
         else:
@@ -193,7 +193,7 @@ def find_k(n: int, q: int, correct_substitutions = False):
     if q != 2 and correct_substitutions:
         print("correct_substitutions can be True only for q = 2")
         raise RuntimeError
-    if q == 2
+    if q == 2:
         if not correct_substitutions:
             return n - np.ceil(np.log(n+1)/np.log(2)).astype(np.uint32)
         else:
@@ -211,7 +211,86 @@ def _correct_binary_indel(n: int, m: int, a: int, y):
            y (noisy codeword, np array)
     Output: corrected codeword
     '''
-    raise NotImplementedError
+    s = _compute_syndrome_binary(n, m, a, y)
+    w = np.sum(y)
+    y_decoded = np.zeros(n, dtype=np.uint32)
+    if y.size == n-1:
+        # deletion
+        if s == 0:
+            # last entry 0 was deleted
+            y_decoded[:-1] = y
+        elif s <= w:
+            # 0 deleted and s = number of 1s to right
+            num_ones_seen = 0
+            for i in reversed(range(n-1)):
+                if y[i] == 1:
+                    num_ones_seen += 1
+                    if num_ones_seen == s:
+                        y_decoded[:i] = y[:i]
+                        y_decoded[i+1:] = y[i:]
+                        break
+        else:
+            # 1 deleted and s-w-1 = number of 0s to left
+            num_zeros_seen = 0
+            if s-w-1 == 0:
+                y_decoded[0] = 1
+                y_decoded[1:] = y
+            else:
+                success = False
+                for i in range(n-1):
+                    if y[i] == 0:
+                        num_zeros_seen += 1
+                        if num_zeros_seen == s-w-1:
+                            y_decoded[:i+1] = y[:i+1]
+                            y_decoded[i+1] = 1
+                            y_decoded[i+2:] = y[i+1:]
+                            success = True
+                            break
+                if not success:
+                    y_decoded = None
+    else:
+        # insertion
+        if s == m-n-1 or s == 0:
+            # last entry inserted
+            y_decoded = y[:-1]
+        elif s == m-w:
+            # remove first entry
+            y_decoded = y[1:]
+        elif s > m-w:
+            # 0 was inserted, m-s 1's to the right of this zero
+            num_ones_seen = 0
+            success = False
+            for i in reversed(range(2,n+1)):
+                if y[i] == 1:
+                    num_ones_seen += 1
+                    if num_ones_seen == m-s:
+                        if y[i-1] == 0:
+                            y_decoded[:i-1] = y[:i-1]
+                            y_decoded[i-1:] = y[i:]
+                            success = True
+                        else:
+                            pass
+                        break
+            if not success:
+                y_decoded = None
+        else:
+            # 1 was inserted, m-w-s 0's to the left of this 1
+            num_zeros_seen = 0
+            success = False
+            for i in range(n-1):
+                if y[i] == 0:
+                    num_zeros_seen += 1
+                    if num_zeros_seen == m-w-s:
+                        if y[i+1] == 1:
+                            y_decoded[:i+1] = y[:i+1]
+                            y_decoded[i+1:] = y[i+2:]
+                            success = True
+                        else:
+                            pass
+                        break
+            if not success:
+                y_decoded = None
+    return y_decoded
 
 def _correct_binary_substitution(n: int, m: int, a: int, y):
     '''
@@ -220,14 +299,26 @@ def _correct_binary_substitution(n: int, m: int, a: int, y):
            y (noisy codeword, np array)
     Output: corrected codeword
     '''
-    raise NotImplementedError
+    assert m == 2*n+1
+    s = _compute_syndrome_binary(n, m, a, y)
+    y_decoded = np.array(y)
+    if s == 0:
+        # no error, nothing to do
+        pass
+    elif s < n+1:
+        # 1 flipped to 0 at s
+        y_decoded[s-1] = 1
+    else:
+        # 0 flipped to 1 at 2n+1-s
+        y_decoded[2*n+1-s-1] = 0
+    return y_decoded
 
 def _compute_syndrome_binary(n: int, m: int, a: int, y):
     '''
     compute the syndrome in the binary case (a - sum(i*y_i) mod m)
     '''
     n_y = y.size
-    return np.mod(a - (1+np.arange(n_y))*y,m)
+    return np.mod(a - np.sum((1+np.arange(n_y))*y),m)
 
 def _correct_q_ary_indel(n: int, m: int, a: int, b: int, q: int, y):
     '''
