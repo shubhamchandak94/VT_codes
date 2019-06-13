@@ -105,7 +105,7 @@ class VTCode:
         # first set systematic positions
         y[self.systematic_positions-1] = x
         # now set the rest positions based on syndrome
-        syndrome = _compute_syndrome_binary(self.n, self.m, self.a, y)
+        syndrome = _compute_syndrome_binary(self.m, self.a, y)
         if syndrome != 0:
             for pos in reversed(self.parity_positions):
                 if syndrome >= pos:
@@ -129,9 +129,9 @@ class VTCode:
         if y is None or y.size != self.n:
             return False
         if self.q == 2:
-            return (_compute_syndrome_binary(self.n, self.m, self.a, y) == 0)
+            return (_compute_syndrome_binary(self.m, self.a, y) == 0)
         else:
-            return (_compute_syndrome_q_ary(self.n, self.m, self.a, self.b, self.q, y) == (0,0))
+            return (_compute_syndrome_q_ary(self.m, self.a, self.b, self.q, y) == (0,0))
 
     def _generate_systematic_positions_binary(self):
         # generate positions of systematic and parity bits (1 indexed)
@@ -171,11 +171,11 @@ def find_smallest_n(k: int, q : int, correct_substitutions = False):
     # set the starting n and then increase till you get the minimum
     if q == 2:
         if not correct_substitutions:
-            n = k + np.ceil(np.log(k+1)/np.log(2)).astype(np.uint32)
+            n = k + np.ceil(np.log2(k+1)).astype(np.uint32)
         else:
-            n = k + np.ceil(np.log(2*k+1)/np.log(2)).astype(np.uint32)
+            n = k + np.ceil(np.log2(2*k+1)).astype(np.uint32)
     else:
-        raise NotImplementedError
+        n = int(k/np.ceil(np.log2(q)).astype(np.uint32))
     while True:
         if find_k(n, q, correct_substitutions) >= k:
             break
@@ -195,12 +195,17 @@ def find_k(n: int, q: int, correct_substitutions = False):
         raise RuntimeError
     if q == 2:
         if not correct_substitutions:
-            return n - np.ceil(np.log(n+1)/np.log(2)).astype(np.uint32)
+            return n - np.ceil(np.log2(n+1)).astype(np.uint32)
         else:
-            return n - np.ceil(np.log(2*n+1)/np.log(2)).astype(np.uint32)
+            return n - np.ceil(np.log2(2*n+1)).astype(np.uint32)
     else:
-        raise NotImplementedError
-
+        t = np.ceil(np.log2(n)).astype(np.uint32)
+        if q == 3:
+            return np.floor((n-3*t+1)*np.log(q)).astype(np.uint32) + 2*(t-3)
+        else:
+            return np.floor((n-3*t+1)*np.log(q)).astype(np.uint32) + \
+            np.floor(2*np.log2(q-1)).astype(np.uint32)*(t-3) + \
+            np.floor(np.log2(q-1)).astype(np.uint32)
 
 # internal functions
 def _correct_binary_indel(n: int, m: int, a: int, y):
@@ -211,7 +216,7 @@ def _correct_binary_indel(n: int, m: int, a: int, y):
            y (noisy codeword, np array)
     Output: corrected codeword
     '''
-    s = _compute_syndrome_binary(n, m, a, y)
+    s = _compute_syndrome_binary(m, a, y)
     w = np.sum(y)
     y_decoded = np.zeros(n, dtype=np.uint32)
     if y.size == n-1:
@@ -300,7 +305,7 @@ def _correct_binary_substitution(n: int, m: int, a: int, y):
     Output: corrected codeword
     '''
     assert m == 2*n+1
-    s = _compute_syndrome_binary(n, m, a, y)
+    s = _compute_syndrome_binary(m, a, y)
     y_decoded = np.array(y)
     if s == 0:
         # no error, nothing to do
@@ -313,7 +318,7 @@ def _correct_binary_substitution(n: int, m: int, a: int, y):
         y_decoded[2*n+1-s-1] = 0
     return y_decoded
 
-def _compute_syndrome_binary(n: int, m: int, a: int, y):
+def _compute_syndrome_binary(m: int, a: int, y):
     '''
     compute the syndrome in the binary case (a - sum(i*y_i) mod m)
     '''
@@ -327,15 +332,71 @@ def _correct_q_ary_indel(n: int, m: int, a: int, b: int, q: int, y):
            y (noisy codeword, np array)
     Output: corrected codeword
     '''
-    raise NotImplementedError
+    alpha = _convert_y_to_alpha(y)
+    alpha_corrected = _correct_binary_indel(n-1, m, a, alpha)
+    if alpha_corrected is None or _compute_syndrome_binary(m, a, alpha_corrected) != 0:
+        return None
+    error_symbol = np.mod(b-np.sum(y),q) # value of symbol inserted/deleted
+    y_decoded = np.zeros(n, dtype=np.uint32)
+    if alpha.size == n-2:
+        # deletion
+        # first find the position where alpha and alpha_corrected differ
+        if np.array_equal(alpha, alpha_corrected[:-1]):
+            diff_pos = n-2
+        else:
+            diff_pos = 0
+            for diff_pos in range(n-2):
+                if alpha[diff_pos] != alpha_corrected[diff_pos]:
+                    break
+        # at this point we know that alpha_corrected[diff_pos] was deleted from
+        # the run containing diff_pos position
+        # now we move back from diff pos and try to find the position
+        del_pos = diff_pos + 1 # position of deletion in original codeword
+        while True:
+            if del_pos == 0:
+                break
+            if (alpha_corrected[del_pos-1] == (error_symbol >= y[del_pos-1])) \
+                and (alpha_corrected[del_pos] == (y[del_pos] >= error_symbol)):
+                break
+            del_pos -= 1
+        y_decoded[:del_pos] = y[:del_pos]
+        y_decoded[del_pos] = error_symbol
+        y_decoded[del_pos+1:] = y[del_pos:]
+    else:
+        #insertion
+        # first find the position where alpha and alpha_corrected differ
+        if np.array_equal(alpha[:-1], alpha_corrected):
+            diff_pos = n
+        else:
+            diff_pos = 0
+            for diff_pos in range(n):
+                if alpha[diff_pos] != alpha_corrected[diff_pos]:
+                    break
+        # at this point we know that alpha_corrected[diff_pos] was deleted from
+        # the run containing diff_pos position
+        # now we move back from diff pos and try to find the position
+        ins_pos = diff_pos + 1 # position of insertion in original codeword
+        while True:
+            if ins_pos == 0:
+                break
+            if (y[ins_pos] == error_symbol) and \
+                (alpha_corrected[ins_pos-1] == (y[ins_pos+1] >= y[ins_pos-1])):
+                break
+            ins_pos -= 1
+        y_decoded[:ins_pos] = y[:ins_pos]
+        y_decoded[ins_pos:] = y[ins_pos+1:]
+    if _compute_syndrome_q_ary(m, a, b, q, y_decoded) == (0,0):
+        return y_decoded
+    else:
+        return None
 
-def _compute_syndrome_q_ary(n: int, m: int, a: int, b: int, q: int, y):
+def _compute_syndrome_q_ary(m: int, a: int, b: int, q: int, y):
     '''
     compute the syndrome in the binary case (a - sum(i*alpha_i) mod m, b - sum(y_i) mod q)
     '''
     n_y = y.size
     alpha = _convert_y_to_alpha(y)
-    return (np.mod(a - (1+np.arange(n_y-1))*alpha,m), np.mod(b-np.sum(y),q))
+    return (_compute_syndrome_binary(m, a, alpha), np.mod(b-np.sum(y),q))
 
 def _convert_y_to_alpha(y):
     '''
