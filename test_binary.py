@@ -14,10 +14,10 @@ for k in range(1,100):
     print('n=',vt.find_smallest_n(k, q = 2, correct_substitutions=True),'for substitution correction')
 
 numtrials = 10 # number of messages to try
-numtrials_a = 5 # number of a's to try
+numtrials_a = 10 # number of a's to try
 # test insertion and deletion correction for selected values of n
 for n in [5, 10, 15, 50, 100]:
-    for a in np.random.randint(n+1,size=numtrials_a):
+    for a in np.append(0,np.random.randint(n+1,size=numtrials_a)):
         code = vt.VTCode(n, q = 2, a = a)
         k = vt.find_k(n, q = 2)
         for trial in range(numtrials):
@@ -43,7 +43,7 @@ for n in [5, 10, 15, 50, 100]:
 
 # test insertion, deletion and substitution correction when correct_substitutions is True
 for n in [5, 10, 15, 50, 100]:
-    for a in np.random.randint(n+1,size=numtrials_a):
+    for a in np.append(0,np.random.randint(n+1,size=numtrials_a)):
         code = vt.VTCode(n, q = 2, a = a,correct_substitutions = True)
         k = vt.find_k(n, q = 2, correct_substitutions = True)
         for trial in range(numtrials):
