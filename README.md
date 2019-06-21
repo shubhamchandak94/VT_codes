@@ -8,7 +8,7 @@ VT codes are error correcting codes that can correct single insertion/deletion e
 4. Sloane, N. J. (2000). On single-deletion-correcting codes. Codes and designs, 10, 273-291. [[link]](https://arxiv.org/abs/math/0207197)
 5. Abroshan, M., Venkataramanan, R., & Fabregas, A. G. I. (2018, June). Efficient systematic encoding of non-binary VT codes. In 2018 IEEE International Symposium on Information Theory (ISIT) (pp. 91-95). IEEE. [[link]](https://ieeexplore.ieee.org/document/8437715)
 
-Arxiv tutorial associated with this implementation: Coming soon!
+Arxiv tutorial associated with this implementation: https://arxiv.org/abs/1906.07887
 
 ## Instructions
 
