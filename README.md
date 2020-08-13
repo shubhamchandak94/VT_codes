@@ -10,6 +10,8 @@ VT codes are error correcting codes that can correct single insertion/deletion e
 
 Arxiv tutorial associated with this implementation: https://arxiv.org/abs/1906.07887
 
+Also see the repository [dtch1997/single-edit-correcting-code](https://github.com/dtch1997/single-edit-correcting-code) for a quaternary alphabet specific code correcting single edits.
+
 ## Instructions
 
 Download:
